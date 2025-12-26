@@ -1,0 +1,8 @@
+{
+  "name": "StickerForge AI - Professional Logo & POD Designer",
+  "description": "A high-end design platform for generating, cloning, and iterating logo stickers optimized for T-shirts, mugs, and die-cut prints with Gemini-powered AI tools.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
