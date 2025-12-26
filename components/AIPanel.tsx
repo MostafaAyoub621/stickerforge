@@ -1,25 +1,50 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { gemini } from '../services/geminiService';
 import { DesignStyle, ProductTarget, DesignAsset, ProjectState } from '../types';
 
 interface AIPanelProps {
   project: ProjectState;
   onGenerate: (asset: DesignAsset) => void;
+  updateProject: (updates: Partial<ProjectState>) => void;
   setLoading: (l: boolean) => void;
 }
 
-const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, setLoading }) => {
+const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, updateProject, setLoading }) => {
   const [editPrompt, setEditPrompt] = useState('');
   const [isMetaLoading, setIsMetaLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleEdit = async () => {
     if (!project.currentAsset || !editPrompt) return;
     setLoading(true);
     try {
       const newUrl = await gemini.editLogo(project.currentAsset.url, editPrompt);
-      onGenerate({ ...project.currentAsset, id: Math.random().toString(36).substr(2, 9), url: newUrl, timestamp: Date.now() });
+      onGenerate({ 
+        ...project.currentAsset, 
+        id: Math.random().toString(36).substr(2, 9), 
+        url: newUrl, 
+        timestamp: Date.now() 
+      });
       setEditPrompt('');
+    } catch (err: any) {
+      alert(err.message);
+    } finally { setLoading(false); }
+  };
+
+  const handleRemoveBackground = async () => {
+    if (!project.currentAsset) return;
+    setLoading(true);
+    try {
+      const newUrl = await gemini.removeBackground(project.currentAsset.url);
+      onGenerate({ 
+        ...project.currentAsset, 
+        id: Math.random().toString(36).substr(2, 9), 
+        url: newUrl, 
+        timestamp: Date.now() 
+      });
+    } catch (err: any) {
+      alert(err.message);
     } finally { setLoading(false); }
   };
 
@@ -29,6 +54,8 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, setLoading }) =>
     try {
       const paths = await gemini.vectorizeImage(project.currentAsset.url);
       onGenerate({ ...project.currentAsset, vectorPaths: paths });
+    } catch (err: any) {
+      alert(err.message);
     } finally { setLoading(false); }
   };
 
@@ -46,6 +73,17 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, setLoading }) =>
     } finally { setIsMetaLoading(false); }
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        updateProject({ imageInput: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const copyTags = () => {
     if (project.currentAsset?.metadata?.tags) {
       navigator.clipboard.writeText(project.currentAsset.metadata.tags.join(', '));
@@ -59,37 +97,85 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, setLoading }) =>
         <section>
           <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400 mb-6 flex items-center gap-2.5">
             <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-            Refinement Engine
+            Design Controller
           </h3>
+          
+          <div className="mb-6">
+            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-3">Reference Source</label>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              accept="image/*" 
+              onChange={handleImageUpload} 
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full py-4 bg-slate-900 border border-slate-800 rounded-2xl text-[10px] font-black text-slate-400 hover:bg-slate-800 hover:text-white transition-all uppercase tracking-widest flex flex-col items-center justify-center gap-2 mb-3 group"
+            >
+              <div className="p-3 bg-blue-500/10 rounded-full group-hover:bg-blue-500/20 transition-all">
+                <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-5-8l-3-3m0 0l-3 3m3-3v12" /></svg>
+              </div>
+              UPLOAD REFERENCE IMAGE
+            </button>
+            
+            {project.imageInput && (
+              <div className="relative group rounded-2xl overflow-hidden border border-blue-500/30 p-2 bg-blue-500/5 animate-in fade-in zoom-in-95">
+                <img src={project.imageInput} className="w-full h-32 object-contain rounded-xl shadow-lg" alt="Reference Preview" />
+                <button 
+                  onClick={() => updateProject({ imageInput: undefined })}
+                  className="absolute top-4 right-4 bg-red-500 p-1.5 rounded-full text-white shadow-xl hover:scale-110 active:scale-95 transition-all"
+                  title="Clear Reference"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+                <div className="mt-2 text-[8px] font-black text-center text-blue-400 uppercase tracking-[0.2em]">Active Layout Template</div>
+              </div>
+            )}
+          </div>
+
+          <div className="h-px bg-slate-800 w-full mb-8"></div>
+
           {project.currentAsset ? (
-            <div className="space-y-5">
-              <div className="relative group">
-                <textarea 
-                  value={editPrompt} 
-                  onChange={(e) => setEditPrompt(e.target.value)}
-                  placeholder="e.g. 'Make it more vibrant', 'Add a metallic glow', 'Shift colors to teal'..."
-                  className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 text-xs h-32 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none placeholder:text-slate-700 transition-all font-medium leading-relaxed"
-                />
-                <div className="absolute bottom-3 right-3 opacity-0 group-focus-within:opacity-100 transition-opacity">
-                   <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Shift+Enter to Run</span>
+            <div className="space-y-6">
+              <div>
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-3">Refinement Engine</label>
+                <div className="relative group">
+                  <textarea 
+                    value={editPrompt} 
+                    onChange={(e) => setEditPrompt(e.target.value)}
+                    placeholder="e.g. 'Make the lines thicker', 'Change theme to neon', 'Add a floral border'..."
+                    className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl p-4 text-xs h-32 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none placeholder:text-slate-700 transition-all font-medium leading-relaxed"
+                  />
                 </div>
               </div>
+
               <div className="grid grid-cols-1 gap-3">
                 <button 
                   onClick={handleEdit} 
                   disabled={!editPrompt}
-                  className="w-full py-4 bg-blue-600/10 border border-blue-500/20 text-blue-200 rounded-2xl text-[10px] font-black hover:bg-blue-600/20 transition-all flex items-center justify-center gap-3 tracking-widest uppercase disabled:opacity-20"
+                  className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[10px] font-black transition-all flex items-center justify-center gap-3 tracking-widest uppercase disabled:opacity-20 shadow-xl shadow-indigo-600/20"
                 >
                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                   MAGIC ITERATE
+                   APPLY REFINEMENT
                 </button>
-                <button 
-                  onClick={handleVectorize} 
-                  className="w-full py-4 bg-indigo-600/10 border border-indigo-500/20 text-indigo-200 rounded-2xl text-[10px] font-black hover:bg-indigo-600/20 transition-all flex items-center justify-center gap-3 tracking-widest uppercase"
-                >
-                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01" /></svg>
-                   EXTRACT VECTORS
-                </button>
+                
+                <div className="grid grid-cols-1 gap-3">
+                  <button 
+                    onClick={handleRemoveBackground} 
+                    className="w-full py-4 bg-emerald-600/10 border border-emerald-500/20 text-emerald-300 rounded-2xl text-[10px] font-black hover:bg-emerald-600/20 transition-all flex items-center justify-center gap-3 uppercase shadow-lg"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    REMOVE BACKGROUND
+                  </button>
+                  <button 
+                    onClick={handleVectorize} 
+                    className="w-full py-4 bg-blue-600/10 border border-blue-500/20 text-blue-300 rounded-2xl text-[10px] font-black hover:bg-blue-600/20 transition-all flex items-center justify-center gap-3 uppercase shadow-lg"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01" /></svg>
+                    EXTRACT VECTOR
+                  </button>
+                </div>
               </div>
             </div>
           ) : (

@@ -18,6 +18,8 @@ const App: React.FC = () => {
     brandName: '',
     logoText: '',
     fontFamily: 'Inter',
+    fontSize: 24,
+    textColor: '#000000',
     mergeTextWithStyle: true,
     textPosition: TextPosition.BELOW,
   });
@@ -66,12 +68,14 @@ const App: React.FC = () => {
         brandName: project.brandName || "Design",
         logoText: project.logoText,
         fontFamily: project.fontFamily,
+        fontSize: project.fontSize,
+        textColor: project.textColor,
         mergeTextWithStyle: project.mergeTextWithStyle,
         textPosition: project.textPosition,
         complexity: 'balanced',
         palette: 'Vibrant',
         aspectRatio: '1:1',
-        imageInput: project.imageInput // Used for design cloning
+        imageInput: project.imageInput 
       });
       handleUpdateAsset({
         id: Math.random().toString(36).substr(2, 9),
@@ -81,8 +85,9 @@ const App: React.FC = () => {
         prompt: prompt,
         timestamp: Date.now()
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert(e.message || "An unexpected error occurred during generation.");
     } finally {
       setIsLoading(false);
     }
@@ -112,6 +117,7 @@ const App: React.FC = () => {
           isLoading={isLoading} 
           setLoading={setIsLoading} 
           onUpdate={(url) => project.currentAsset && handleUpdateAsset({...project.currentAsset, url})} 
+          updateProject={(u: any) => setProject(p => ({...p, ...u}))}
         />
         
         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-3xl px-8 z-40">
@@ -198,7 +204,12 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      <AIPanel project={project} onGenerate={handleUpdateAsset} setLoading={setIsLoading} />
+      <AIPanel 
+        project={project} 
+        onGenerate={handleUpdateAsset} 
+        updateProject={(u) => setProject(p => ({...p, ...u}))}
+        setLoading={setIsLoading} 
+      />
       <LiveAssistant />
     </div>
   );

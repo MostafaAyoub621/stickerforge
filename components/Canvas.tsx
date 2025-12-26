@@ -3,7 +3,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useGesture } from '@use-gesture/react';
 import { animated, useSpring } from '@react-spring/web';
 import { DesignAsset, ProductTarget, CanvasBackground, ExportFormat } from '../types';
-import { MARKETPLACE_PRESETS } from '../constants';
+import { MARKETPLACE_PRESETS, PRODUCT_CATEGORIES } from '../constants';
 
 interface CanvasProps {
   asset: DesignAsset | null;
@@ -12,11 +12,12 @@ interface CanvasProps {
   isLoading: boolean;
   setLoading: (l: boolean) => void;
   onUpdate: (url: string) => void;
+  updateProject: (updates: any) => void;
 }
 
 type CanvasViewMode = 'editor' | 'mockup' | 'vector';
 
-const Canvas: React.FC<CanvasProps> = ({ asset, target, background, isLoading, setLoading, onUpdate }) => {
+const Canvas: React.FC<CanvasProps> = ({ asset, target, background, isLoading, setLoading, onUpdate, updateProject }) => {
   const [viewMode, setViewMode] = useState<CanvasViewMode>('editor');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [selectedNode, setSelectedNode] = useState<{pathIdx: number, nodeIdx: number} | null>(null);
@@ -24,7 +25,6 @@ const Canvas: React.FC<CanvasProps> = ({ asset, target, background, isLoading, s
   const [mockupScale, setMockupScale] = useState(1);
   const [mockupRotation, setMockupRotation] = useState(0);
   
-  // Custom Export State
   const [exportWidth, setExportWidth] = useState('2000');
   const [exportHeight, setExportHeight] = useState('2000');
   
@@ -74,10 +74,12 @@ const Canvas: React.FC<CanvasProps> = ({ asset, target, background, isLoading, s
       onPinch: ({ offset: [s], active }) => {
         api.start({ zoom: s, immediate: active });
       },
-      onWheel: ({ delta: [, dy], active }) => {
-        // Natural feeling zoom with scroll wheel
-        const newZoom = Math.min(Math.max(zoom.get() - dy * 0.002, 0.1), 10);
-        api.start({ zoom: newZoom, immediate: active });
+      onWheel: ({ delta: [, dy], active, event }) => {
+        if (event.ctrlKey || event.metaKey || viewMode === 'editor' || viewMode === 'vector') {
+            const factor = event.ctrlKey ? 0.005 : 0.002;
+            const newZoom = Math.min(Math.max(zoom.get() - dy * factor, 0.1), 10);
+            api.start({ zoom: newZoom, immediate: active });
+        }
       }
     },
     { 
@@ -121,14 +123,13 @@ const Canvas: React.FC<CanvasProps> = ({ asset, target, background, isLoading, s
 
   const handleExport = async (format: ExportFormat) => {
     if (!asset) return;
+    const width = parseInt(exportWidth) || 2000;
+    const height = parseInt(exportHeight) || 2000;
     
     if (format === 'SVG') {
-      const width = parseInt(exportWidth) || 2000;
-      const height = parseInt(exportHeight) || 2000;
-      
       let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 512 512">`;
       if (localPaths.length > 0) {
-        svgContent += localPaths.map(p => `<path d="${p}" fill="black" />`).join('\n');
+        svgContent += localPaths.map(p => `<path d="${p}" fill="black" stroke="none" />`).join('\n');
       } else {
         svgContent += `<image href="${asset.url}" x="0" y="0" width="512" height="512" />`;
       }
@@ -144,14 +145,14 @@ const Canvas: React.FC<CanvasProps> = ({ asset, target, background, isLoading, s
     } else if (format === 'PDF') {
       const win = window.open("", "_blank");
       if (win) {
-        win.document.write(`<html><body style="margin:0;display:flex;justify-content:center;align-items:center;height:100vh;"><img src="${asset.url}" style="width:${exportWidth}px;height:${exportHeight}px;object-contain:contain;"/></body></html>`);
+        win.document.write(`<html><body style="margin:0;display:flex;justify-content:center;align-items:center;height:100vh;"><img src="${asset.url}" style="width:${width}px;height:${height}px;object-fit:contain;"/></body></html>`);
         win.document.close();
         setTimeout(() => win.print(), 500);
       }
     } else {
       const canvas = document.createElement('canvas');
-      canvas.width = parseInt(exportWidth) || 2000;
-      canvas.height = parseInt(exportHeight) || 2000;
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         const img = new Image();
@@ -172,57 +173,90 @@ const Canvas: React.FC<CanvasProps> = ({ asset, target, background, isLoading, s
     setShowExportMenu(false);
   };
 
-  const renderMockup = () => {
-    if (!asset) return null;
-    const isNoneTarget = target === ProductTarget.NONE;
+  const simplifyPaths = () => {
+    setLocalPaths(prev => prev.map(p => {
+        const commands = p.split(/(?=[MLCZA])/);
+        return commands.filter((_, i) => i === 0 || i % 2 === 0).join(' ');
+    }));
+  };
 
-    return (
-      <div className="relative w-[480px] h-[480px] group cursor-pointer perspective-1000 flex flex-col items-center justify-center">
-        <div className="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/10 rounded-full blur-[120px] transition-all duration-1000 opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-110"></div>
-        
-        <div className={`relative w-full h-full ${isNoneTarget ? 'bg-slate-900/40 border-dashed' : 'bg-slate-900'} border border-slate-700/50 rounded-[64px] shadow-2xl flex flex-col items-center justify-center transition-all duration-700 ease-out group-hover:shadow-[0_0_100px_rgba(59,130,246,0.2)]`}
-             style={{ transform: `scale(${mockupScale}) rotate(${mockupRotation}deg)` }}>
-          
-          <div className="relative p-12 transition-all duration-700 ease-out group-hover:scale-105">
-            <div className="relative">
-              <div className="absolute bottom-[-10%] left-1/2 -translate-x-1/2 w-4/5 h-[20%] bg-black/40 blur-[40px] rounded-full group-hover:blur-[50px] transition-all"></div>
-              <img 
-                src={asset.url} 
-                className="w-64 h-64 object-contain relative z-10 drop-shadow-[0_20px_60px_rgba(0,0,0,0.6)] transition-all duration-700 group-hover:drop-shadow-[0_40px_80px_rgba(59,130,246,0.3)]" 
-                alt="Real-time Preview" 
-              />
-              <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent pointer-events-none rounded-full mix-blend-screen opacity-50"></div>
-            </div>
-          </div>
+  const mergeNodes = () => {
+    if (!selectedNode) return;
+    setLocalPaths(prev => {
+        const next = [...prev];
+        const cmds = next[selectedNode.pathIdx].split(/(?=[MLCZA])/);
+        if (cmds.length > 2) {
+            cmds.splice(selectedNode.nodeIdx, 1);
+            next[selectedNode.pathIdx] = cmds.join(' ');
+        }
+        return next;
+    });
+    setSelectedNode(null);
+  };
 
-          <div className="absolute bottom-12 flex flex-col items-center gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
-            <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.6em] group-hover:text-blue-400 transition-colors">
-              {isNoneTarget ? 'PRODUCTION ASSET' : target.replace('_', ' ')}
-            </span>
-            <div className="w-16 h-1 bg-blue-500/30 rounded-full scale-x-0 group-hover:scale-x-100 transition-transform duration-700 origin-center"></div>
-          </div>
+  const renderMockupHub = () => {
+    if (!asset) return (
+        <div className="w-full h-full flex items-center justify-center text-slate-700 uppercase font-black tracking-widest text-sm">
+            Generate a design first to see mockups
         </div>
-
-        <div className="absolute -bottom-12 flex items-center gap-8 glass px-6 py-3 rounded-2xl opacity-0 group-hover:opacity-100 transition-all translate-y-4 group-hover:translate-y-0">
-           <div className="flex flex-col gap-1">
-             <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Mockup Scale</span>
-             <input 
-               type="range" min="0.6" max="1.3" step="0.01" 
-               value={mockupScale} 
-               onChange={(e) => setMockupScale(parseFloat(e.target.value))}
-               className="w-24 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
-             />
-           </div>
-           <div className="w-px h-6 bg-slate-700/50"></div>
-           <div className="flex flex-col gap-1">
-             <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Mockup Rotation</span>
-             <input 
-               type="range" min="-45" max="45" step="1" 
-               value={mockupRotation} 
-               onChange={(e) => setMockupRotation(parseInt(e.target.value))}
-               className="w-24 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-             />
-           </div>
+    );
+    return (
+      <div className="w-full h-full flex flex-col items-center gap-8 p-12 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-700">
+        <div className="flex flex-col items-center gap-2">
+            <h2 className="text-xl font-black text-white uppercase tracking-widest flex items-center gap-4">
+               <svg className="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+               Real-Time Mockup Hub
+            </h2>
+            <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest animate-pulse">Design updates instantly reflect below</span>
+        </div>
+        
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 w-full max-w-7xl">
+           {PRODUCT_CATEGORIES.flatMap(cat => cat.items).filter(p => p.id !== ProductTarget.NONE).map(p => (
+              <button 
+                key={p.id}
+                onClick={() => updateProject({ target: p.id })}
+                className={`relative group rounded-3xl overflow-hidden aspect-square border-2 transition-all duration-500 ${target === p.id ? 'border-blue-500 ring-4 ring-blue-500/20' : 'border-slate-800 hover:border-slate-600'}`}
+              >
+                 <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center p-8">
+                    <div className="relative w-full h-full flex items-center justify-center">
+                        <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950 opacity-40"></div>
+                        <img 
+                            src={asset.url} 
+                            className={`w-32 h-32 object-contain relative z-10 transition-all duration-700 drop-shadow-[0_15px_30px_rgba(0,0,0,0.5)] ${target === p.id ? 'scale-110 rotate-3' : 'group-hover:scale-105'}`}
+                            alt={p.name}
+                        />
+                        <div className="absolute inset-0 bg-white/5 opacity-10 blur-xl scale-125"></div>
+                    </div>
+                 </div>
+                 <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex flex-col items-center">
+                    <span className="text-[10px] font-black text-white uppercase tracking-widest">{p.name}</span>
+                 </div>
+              </button>
+           ))}
+        </div>
+        
+        <div className="mt-12 p-10 glass rounded-[48px] border-white/5 w-full max-w-4xl flex flex-col items-center shadow-3xl">
+            <span className="text-[9px] font-black text-blue-500 uppercase tracking-[0.4em] mb-4">Focused Selection: {target.replace('_', ' ')}</span>
+            <div className="relative group/master transition-transform duration-700 hover:scale-105"
+                 style={{ transform: `scale(${mockupScale}) rotate(${mockupRotation}deg)` }}>
+                <div className="absolute inset-0 bg-blue-500/5 blur-[100px] rounded-full group-hover/master:bg-blue-500/15 transition-all"></div>
+                <img 
+                    src={asset.url} 
+                    className="w-72 h-72 object-contain relative z-10 drop-shadow-[0_40px_80px_rgba(0,0,0,0.8)]"
+                    alt="Master Preview"
+                />
+            </div>
+            
+            <div className="flex gap-8 mt-12 bg-slate-900/80 px-8 py-4 rounded-3xl border border-white/5 backdrop-blur-3xl">
+                <div className="flex flex-col gap-1">
+                    <span className="text-[8px] font-black text-slate-500 uppercase">Size Scale</span>
+                    <input type="range" min="0.5" max="1.5" step="0.01" value={mockupScale} onChange={(e) => setMockupScale(parseFloat(e.target.value))} className="w-32 h-1 bg-slate-800 rounded-lg accent-blue-500" />
+                </div>
+                <div className="flex flex-col gap-1">
+                    <span className="text-[8px] font-black text-slate-500 uppercase">Rotation</span>
+                    <input type="range" min="-180" max="180" value={mockupRotation} onChange={(e) => setMockupRotation(parseInt(e.target.value))} className="w-32 h-1 bg-slate-800 rounded-lg accent-indigo-500" />
+                </div>
+            </div>
         </div>
       </div>
     );
@@ -294,54 +328,39 @@ const Canvas: React.FC<CanvasProps> = ({ asset, target, background, isLoading, s
         )}
       </div>
 
-      {/* Floating dynamic zoom indicator */}
-      <div className="absolute left-6 bottom-6 z-40 group/zoom">
-          <div className="glass px-4 py-2 rounded-full border-white/5 flex items-center gap-3 animate-in fade-in slide-in-from-left-4">
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-              <span className="text-[10px] font-black text-white/80 uppercase tracking-widest font-mono">
-                 {(zoom.get() * 100).toFixed(0)}%
-              </span>
-              <span className="text-[8px] text-slate-500 font-bold uppercase hidden group-hover/zoom:inline transition-all">
-                  (Scroll to zoom)
-              </span>
+      <div className="absolute left-10 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-40 animate-in slide-in-from-left-10">
+          <button onClick={() => setZoomLevel(zoom.get() * 1.25)} className="w-12 h-12 glass rounded-2xl flex items-center justify-center text-slate-400 hover:text-white transition-all shadow-2xl active:scale-90 border-white/10" title="Zoom In"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg></button>
+          <button onClick={() => handleResetView()} className="w-12 h-12 glass rounded-2xl flex items-center justify-center text-blue-500 hover:text-blue-400 transition-all shadow-2xl active:scale-90 border-white/10 font-black text-[10px]" title="Reset View">FIT</button>
+          <button onClick={() => setZoomLevel(zoom.get() * 0.75)} className="w-12 h-12 glass rounded-2xl flex items-center justify-center text-slate-400 hover:text-white transition-all shadow-2xl active:scale-90 border-white/10" title="Zoom Out"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20 12H4" /></svg></button>
+          <div className="h-px w-8 bg-slate-800 mx-auto"></div>
+          <div className="glass px-2 py-4 rounded-full flex flex-col items-center gap-2 border-white/10 shadow-2xl">
+             <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+             <span className="text-[10px] font-black text-slate-500 vertical-text origin-center -rotate-90 py-4">{(zoom.get() * 100).toFixed(0)}%</span>
           </div>
       </div>
 
-      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-4">
-        <div className="glass px-2 py-1.5 rounded-2xl shadow-2xl border-white/5 flex items-center gap-1 backdrop-blur-3xl">
-          <button onClick={() => setZoomLevel(zoom.get() * 0.8)} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-all">
-             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20 12H4" /></svg>
-          </button>
-          
-          <div className="w-[1px] h-4 bg-slate-700/50 mx-1"></div>
-          
-          {[0.5, 1, 2].map(lv => (
-            <button key={lv} onClick={() => setZoomLevel(lv)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${Math.abs(zoom.get() - lv) < 0.1 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'}`}>
-              {lv * 100}%
-            </button>
-          ))}
-          
-          <div className="w-[1px] h-4 bg-slate-700/50 mx-1"></div>
-          
-          <button onClick={() => setZoomLevel(zoom.get() * 1.2)} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-all">
-             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-          </button>
+      {viewMode === 'vector' && (
+        <div className="absolute right-10 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-40 animate-in slide-in-from-right-10">
+           <button onClick={simplifyPaths} className="glass p-4 rounded-2xl text-slate-300 hover:bg-blue-600/20 hover:text-blue-400 transition-all shadow-2xl flex flex-col items-center gap-1.5" title="Simplify Path">
+             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
+             <span className="text-[8px] font-black uppercase tracking-widest">Simplify</span>
+           </button>
+           <button onClick={mergeNodes} disabled={!selectedNode} className="glass p-4 rounded-2xl text-slate-300 hover:bg-indigo-600/20 hover:text-indigo-400 transition-all shadow-2xl flex flex-col items-center gap-1.5 disabled:opacity-30" title="Merge Selected Node">
+             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+             <span className="text-[8px] font-black uppercase tracking-widest">Merge</span>
+           </button>
+           <div className="h-px bg-slate-800 w-10 mx-auto"></div>
+           <div className="flex flex-col gap-2">
+               <button className="glass p-3 rounded-xl text-slate-500 hover:text-white transition-all opacity-50 cursor-not-allowed group relative" title="Union (Coming Soon)">
+                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" /></svg>
+                 <span className="absolute right-full mr-2 bg-black px-2 py-1 rounded text-[8px] opacity-0 group-hover:opacity-100 whitespace-nowrap">Boolean Union</span>
+               </button>
+               <button className="glass p-3 rounded-xl text-slate-500 hover:text-white transition-all opacity-50 cursor-not-allowed group relative" title="Subtract (Coming Soon)">
+                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 12H6" /></svg>
+               </button>
+           </div>
         </div>
-
-        <div className="flex items-center gap-6 glass px-6 py-3 rounded-2xl shadow-2xl border-white/5 backdrop-blur-xl">
-          <div className="flex items-center gap-3">
-            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Viewport</span>
-            <animated.span className="text-white font-mono text-[11px] w-14 text-center font-bold">
-              {zoom.to(v => `${(v * 100).toFixed(0)}%`)}
-            </animated.span>
-          </div>
-          <div className="w-[1px] h-4 bg-slate-700 opacity-50"></div>
-          <button onClick={handleResetView} className="group flex items-center gap-2 text-blue-400 text-[10px] font-black tracking-widest uppercase hover:text-blue-300 transition-all">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4h16v16H4V4z" /></svg>
-            FIT
-          </button>
-        </div>
-      </div>
+      )}
 
       <animated.div className="relative shadow-2xl overflow-hidden rounded-3xl" style={{ width: '512px', height: '512px', x, y, scale: zoom, ...getCanvasBgStyle() }}>
         {isLoading ? (
@@ -350,7 +369,7 @@ const Canvas: React.FC<CanvasProps> = ({ asset, target, background, isLoading, s
             <p className="mt-8 text-[11px] font-black text-blue-400 uppercase tracking-[0.6em] animate-pulse">Forging Masterpiece...</p>
           </div>
         ) : viewMode === 'mockup' ? (
-          <div className="w-full h-full flex items-center justify-center animate-in zoom-in-95 duration-700">{renderMockup()}</div>
+          <div className="w-full h-full flex items-center justify-center animate-in zoom-in-95 duration-700">{renderMockupHub()}</div>
         ) : asset ? (
           <div className="w-full h-full relative">
             <img src={asset.url} className={`w-full h-full object-contain pointer-events-none transition-all duration-700 ${viewMode === 'vector' ? 'opacity-10 grayscale blur-[4px] scale-[1.1]' : 'opacity-100'}`} alt="Design" />

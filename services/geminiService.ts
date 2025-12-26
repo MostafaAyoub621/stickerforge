@@ -7,7 +7,7 @@ export class GeminiService {
     return new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
-  private async shrinkImage(base64: string, maxDim: number = 512): Promise<string> {
+  private async shrinkImage(base64: string, maxDim: number = 256): Promise<string> {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -29,8 +29,9 @@ export class GeminiService {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.8));
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Reduced quality and size to prevent 500 Rpc errors
       };
+      img.onerror = () => resolve(base64);
       img.src = base64;
     });
   }
@@ -50,7 +51,7 @@ export class GeminiService {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: "Generate 5 trending, high-conversion design ideas for Print on Demand platforms (Redbubble, Etsy, Amazon Merch). Include a catchy title, the niche it targets, why it is popular now, and a high-quality prompt for an AI image generator to create a sticker logo for it. Return as JSON array.",
+        contents: "Generate 5 trending, high-conversion design ideas for Print on Demand platforms (Redbubble, Etsy, Amazon Merch, TeePublic). Each idea should target a specific profitable niche. Include a catchy title, the niche name, a brief explanation of its popularity, and a detailed descriptive prompt for an AI image generator to create a professional sticker/logo for it. Return as JSON array.",
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -71,7 +72,7 @@ export class GeminiService {
       const text = this.extractText(response);
       return text ? JSON.parse(text) : [];
     } catch (e) {
-      console.error("Failed to fetch trends", e);
+      console.error("Failed to fetch trends:", e);
       return [];
     }
   }
@@ -84,7 +85,7 @@ export class GeminiService {
         const smallImg = await this.shrinkImage(imageBase64);
         contents.push({ inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } });
       }
-      contents.push({ text: `Analyze the design/concept: "${prompt || 'modern design'}". Suggest a creative brand name and a short logo tagline. Return JSON.` });
+      contents.push({ text: `Based on this design concept "${prompt || 'modern design'}", suggest a professional brand name and a short catchy tagline for a logo. Return JSON.` });
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -102,9 +103,9 @@ export class GeminiService {
         }
       });
       const text = this.extractText(response);
-      return text ? JSON.parse(text) : { brand: "DesignForge", tagline: "Creative Spark" };
+      return text ? JSON.parse(text) : { brand: "StickerForge", tagline: "Design Reimagined" };
     } catch (e) {
-      return { brand: "Forge Design", tagline: "Unleash Creativity" };
+      return { brand: "Design Forge", tagline: "Your Vision, Realized" };
     }
   }
 
@@ -116,7 +117,7 @@ export class GeminiService {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Based on "${currentPrompt}", give 3 short, creative logo/sticker prompt variations. Return ONLY a JSON array of strings.`,
+        contents: `Based on the design idea "${currentPrompt}", provide 3 creative, high-conversion logo prompt variations that include descriptive keywords. Return ONLY a JSON array of strings.`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -128,7 +129,7 @@ export class GeminiService {
       const text = this.extractText(response);
       return text ? JSON.parse(text) : ["Cyberpunk badge", "Abstract monogram", "Retro line art"];
     } catch (e) {
-      return ["Minimalist icon", "Vintage badge", "Modern geometric logo"];
+      return ["Modern geometric logo", "Vintage badge icon", "Minimalist vector art"];
     }
   }
 
@@ -137,14 +138,17 @@ export class GeminiService {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `You are an expert SEO specialist for Print on Demand (POD) platforms like Redbubble, Etsy, Amazon Merch, and TeePublic. 
-        Generate a high-converting, click-worthy title, a keyword-rich compelling description, and exactly 50 powerful, high-volume SEO tags (comma-separated list) for this product: 
+        contents: `You are a world-class SEO expert for Print on Demand (POD). Generate a high-performing product listing for: 
         Brand: "${asset.brand}"
-        Idea: "${asset.prompt}"
-        Style: ${asset.style}
-        Target Product: ${asset.target}
+        Design: "${asset.prompt}"
+        Aesthetic: ${asset.style}
+        Targeting: ${asset.target}
         
-        Tags must include long-tail keywords, broad niche terms, and relevant trending descriptors to ensure the design is found by customers. 
+        Provide:
+        1. A click-worthy Marketplace Title.
+        2. A keyword-rich Description with features and benefits.
+        3. Exactly 50 powerful SEO tags as a JSON array (include long-tail, niche, and trending terms).
+        
         Return JSON.`,
         config: {
           responseMimeType: "application/json",
@@ -153,7 +157,7 @@ export class GeminiService {
             properties: {
               title: { type: Type.STRING },
               description: { type: Type.STRING },
-              tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Array of exactly 50 viral SEO keywords" }
+              tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Array of exactly 50 SEO tags" }
             },
             required: ["title", "description", "tags"]
           }
@@ -175,7 +179,7 @@ export class GeminiService {
         contents: {
           parts: [
             { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
-            { text: "Convert the primary shapes of this logo into a JSON array of SVG path 'd' strings. Simplified for UI rendering." }
+            { text: "Extract the primary vector shapes of this design as a JSON array of SVG path 'd' strings. Simplified for UI rendering." }
           ]
         },
         config: {
@@ -200,6 +204,8 @@ export class GeminiService {
     brandName: string;
     logoText?: string;
     fontFamily?: string;
+    fontSize?: number;
+    textColor?: string;
     mergeTextWithStyle: boolean;
     textPosition: TextPosition;
     imageInput?: string;
@@ -212,28 +218,41 @@ export class GeminiService {
     
     let textInstruction = "";
     if (params.logoText) {
-      textInstruction = `Clearly incorporate the text "${params.logoText}" using ${params.fontFamily || "Inter"} font. Position: ${params.textPosition}.`;
+      // EXTREME clarity to prevent metadata rendering
+      textInstruction = `IMPORTANT: Your design MUST prominently feature the literal text "${params.logoText}". 
+      Text Aesthetic: Use a font style like "${params.fontFamily || "Inter"}". 
+      Text Color: The visible characters must be in the color ${params.textColor || "black"}. 
+      WARNING: NEVER render hex codes (like "${params.textColor}"), font names (like "${params.fontFamily}"), or "Size ${params.fontSize}" as text. ONLY render the exact string: "${params.logoText}". 
+      Position: ${params.textPosition}. Size factor: ${params.fontSize || 32}.`;
     }
 
     const targetDescription = params.target === ProductTarget.NONE 
-      ? 'standalone professional flat vector graphic' 
-      : `professional design optimized for a ${params.target}`;
+      ? 'standalone professional graphic' 
+      : `professional design optimized for ${params.target}`;
 
-    const fullPrompt = `High-end ${params.style} ${targetDescription}. Color Palette: ${params.palette}. ${textInstruction} Clean vector iconography, solid colors, sharp edges, isolated on a white background. ${params.prompt}.`;
+    const fullPrompt = `Task: Create a professional high-quality ${params.style} ${targetDescription}. 
+    Subject: ${params.prompt}. 
+    Style requirements: Flat vector, solid colors, sharp clean edges, pure white background, no gradients, no photographic shadows.
+    Text requirements: ${textInstruction}
+    Output: A single isolated badge or logo.`;
 
     try {
-      let contents: any = { parts: [{ text: fullPrompt }] };
+      const parts: any[] = [];
+      
+      // If image input exists, we place it as the first part to help model ground its generation
       if (params.imageInput) {
         const smallImg = await this.shrinkImage(params.imageInput);
-        contents.parts.push({ 
+        parts.push({ 
           inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } 
         });
-        contents.parts.push({ text: "STRICTLY CLONE this design's composition, shapes, and structural balance. Adapt only the style and text details as requested." });
+        parts.push({ text: "Use the structure and layout of the attached image as a TEMPLATE. Keep the shapes but apply the new style and text provided in the instructions." });
       }
       
+      parts.push({ text: fullPrompt });
+
       const response = await ai.models.generateContent({
         model,
-        contents,
+        contents: { parts },
         config: { imageConfig: { aspectRatio: params.aspectRatio } }
       });
 
@@ -248,8 +267,43 @@ export class GeminiService {
         }
       }
       
-      if (!imageUrl) throw new Error("Image generation failed.");
+      if (!imageUrl) throw new Error("No image was generated. Please try a different style or prompt.");
       return { imageUrl, description: this.extractText(response) || "Generated Design" };
+    } catch (e: any) {
+      console.error("Gemini Image Gen Error:", e);
+      // Fallback for 500/Rpc errors often means payload was too large or internal failure
+      if (e.message?.includes('xhr error') || e.message?.includes('500')) {
+        throw new Error("Design engine encountered a payload error. Try using a smaller reference image or a simpler prompt.");
+      }
+      throw new Error(e.message || "Image generation failed. This could be due to safety filters or service load.");
+    }
+  }
+
+  async removeBackground(base64Image: string): Promise<string> {
+    const ai = this.getAI();
+    try {
+      const smallImg = await this.shrinkImage(base64Image);
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+          parts: [
+            { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
+            { text: "Background Removal Task: Detect the primary design element and isolate it perfectly on a PURE BRIGHT WHITE (#FFFFFF) background. Remove all noise, shadows, and secondary backgrounds." }
+          ]
+        },
+      });
+      let imageUrl = "";
+      const candidate = response.candidates?.[0];
+      if (candidate?.content?.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.inlineData) {
+            imageUrl = `data:image/png;base64,${part.inlineData.data}`;
+            break;
+          }
+        }
+      }
+      if (!imageUrl) throw new Error("Background removal failed. Please ensure the subject is clear.");
+      return imageUrl;
     } catch (e: any) {
       throw e;
     }
@@ -264,7 +318,7 @@ export class GeminiService {
         contents: {
           parts: [
             { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
-            { text: editPrompt }
+            { text: `Transformation Task: Maintain the foundation of this design but apply these specific edits: ${editPrompt}. Respect the existing composition while changing elements.` }
           ]
         },
       });
@@ -278,6 +332,7 @@ export class GeminiService {
           }
         }
       }
+      if (!imageUrl) throw new Error("Image iteration failed.");
       return imageUrl;
     } catch (e: any) {
       throw e;

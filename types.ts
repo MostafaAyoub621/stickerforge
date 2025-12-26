@@ -112,6 +112,8 @@ export interface ProjectState {
   brandName: string;
   logoText: string;
   fontFamily: string;
+  fontSize: number;
+  textColor: string;
   mergeTextWithStyle: boolean;
   textPosition: TextPosition;
   imageInput?: string; 
