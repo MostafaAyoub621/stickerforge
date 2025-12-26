@@ -7,7 +7,7 @@ export class GeminiService {
     return new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
-  private async shrinkImage(base64: string, maxDim: number = 256): Promise<string> {
+  private async shrinkImage(base64: string, maxDim: number = 384): Promise<string> {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -29,7 +29,7 @@ export class GeminiService {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Reduced quality and size to prevent 500 Rpc errors
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
       };
       img.onerror = () => resolve(base64);
       img.src = base64;
@@ -51,7 +51,7 @@ export class GeminiService {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: "Generate 5 trending, high-conversion design ideas for Print on Demand platforms (Redbubble, Etsy, Amazon Merch, TeePublic). Each idea should target a specific profitable niche. Include a catchy title, the niche name, a brief explanation of its popularity, and a detailed descriptive prompt for an AI image generator to create a professional sticker/logo for it. Return as JSON array.",
+        contents: "Generate 5 trending, high-conversion design ideas for Print on Demand platforms. Include a catchy title, the niche name, a brief explanation of popularity, and a detailed descriptive prompt for a sticker logo. Return as JSON array.",
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -85,7 +85,7 @@ export class GeminiService {
         const smallImg = await this.shrinkImage(imageBase64);
         contents.push({ inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } });
       }
-      contents.push({ text: `Based on this design concept "${prompt || 'modern design'}", suggest a professional brand name and a short catchy tagline for a logo. Return JSON.` });
+      contents.push({ text: `Analyze this: "${prompt || 'modern logo'}". Suggest a professional brand name and tagline. Return JSON.` });
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -110,14 +110,11 @@ export class GeminiService {
   }
 
   async suggestPrompts(currentPrompt: string): Promise<string[]> {
-    if (!currentPrompt || currentPrompt.trim().length < 2) {
-      return ["Minimalist mascot", "Retro vaporwave badge", "Geometric icon"];
-    }
     const ai = this.getAI();
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Based on the design idea "${currentPrompt}", provide 3 creative, high-conversion logo prompt variations that include descriptive keywords. Return ONLY a JSON array of strings.`,
+        contents: `Based on "${currentPrompt}", give 3 creative logo prompt variations. Return JSON array of strings.`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -127,9 +124,9 @@ export class GeminiService {
         }
       });
       const text = this.extractText(response);
-      return text ? JSON.parse(text) : ["Cyberpunk badge", "Abstract monogram", "Retro line art"];
+      return text ? JSON.parse(text) : [];
     } catch (e) {
-      return ["Modern geometric logo", "Vintage badge icon", "Minimalist vector art"];
+      return [];
     }
   }
 
@@ -138,18 +135,7 @@ export class GeminiService {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `You are a world-class SEO expert for Print on Demand (POD). Generate a high-performing product listing for: 
-        Brand: "${asset.brand}"
-        Design: "${asset.prompt}"
-        Aesthetic: ${asset.style}
-        Targeting: ${asset.target}
-        
-        Provide:
-        1. A click-worthy Marketplace Title.
-        2. A keyword-rich Description with features and benefits.
-        3. Exactly 50 powerful SEO tags as a JSON array (include long-tail, niche, and trending terms).
-        
-        Return JSON.`,
+        contents: `SEO optimization for: Brand "${asset.brand}", Design "${asset.prompt}". Generate Title, Description, and 50 Tags. Return JSON.`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -157,16 +143,16 @@ export class GeminiService {
             properties: {
               title: { type: Type.STRING },
               description: { type: Type.STRING },
-              tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Array of exactly 50 SEO tags" }
+              tags: { type: Type.ARRAY, items: { type: Type.STRING } }
             },
             required: ["title", "description", "tags"]
           }
         }
       });
       const text = this.extractText(response);
-      return text ? JSON.parse(text) : { title: asset.brand || "New Design", description: asset.prompt, tags: [] };
+      return text ? JSON.parse(text) : { title: asset.brand, description: asset.prompt, tags: [] };
     } catch (e) {
-      return { title: asset.brand || "New Design", description: asset.prompt, tags: [] };
+      return { title: asset.brand, description: asset.prompt, tags: [] };
     }
   }
 
@@ -179,7 +165,7 @@ export class GeminiService {
         contents: {
           parts: [
             { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
-            { text: "Extract the primary vector shapes of this design as a JSON array of SVG path 'd' strings. Simplified for UI rendering." }
+            { text: "Extract SVG path 'd' strings for the main logo elements. Return JSON array." }
           ]
         },
         config: {
@@ -192,8 +178,8 @@ export class GeminiService {
       });
       const text = this.extractText(response);
       return text ? JSON.parse(text) : [];
-    } catch (e: any) {
-      return ["M 256 128 L 384 384 L 128 384 Z"];
+    } catch (e) {
+      return [];
     }
   }
 
@@ -218,36 +204,26 @@ export class GeminiService {
     
     let textInstruction = "";
     if (params.logoText) {
-      // EXTREME clarity to prevent metadata rendering
-      textInstruction = `IMPORTANT: Your design MUST prominently feature the literal text "${params.logoText}". 
-      Text Aesthetic: Use a font style like "${params.fontFamily || "Inter"}". 
-      Text Color: The visible characters must be in the color ${params.textColor || "black"}. 
-      WARNING: NEVER render hex codes (like "${params.textColor}"), font names (like "${params.fontFamily}"), or "Size ${params.fontSize}" as text. ONLY render the exact string: "${params.logoText}". 
-      Position: ${params.textPosition}. Size factor: ${params.fontSize || 32}.`;
+      textInstruction = `CRITICAL: Incorporate exactly the text "${params.logoText}". 
+      FONT STYLE: ${params.fontFamily || "Inter"}. 
+      COLOR: ${params.textColor || "black"}. 
+      PLACEMENT: ${params.textPosition}. 
+      STRICT WARNING: DO NOT RENDER METADATA. DO NOT write technical strings like "Hex: ${params.textColor}", "Font: ${params.fontFamily}", or "Size: ${params.fontSize}" on the design. Only render the literal content "${params.logoText}".`;
     }
 
-    const targetDescription = params.target === ProductTarget.NONE 
-      ? 'standalone professional graphic' 
-      : `professional design optimized for ${params.target}`;
-
-    const fullPrompt = `Task: Create a professional high-quality ${params.style} ${targetDescription}. 
+    const fullPrompt = `A professional high-end ${params.style} sticker/logo design. 
     Subject: ${params.prompt}. 
-    Style requirements: Flat vector, solid colors, sharp clean edges, pure white background, no gradients, no photographic shadows.
-    Text requirements: ${textInstruction}
-    Output: A single isolated badge or logo.`;
+    Optimized for: ${params.target}. 
+    STYLE: Flat vector art, solid fill colors, sharp edges, pure white background. NO gradients, NO 3D effects, NO photographic elements. 
+    ${textInstruction}`;
 
     try {
       const parts: any[] = [];
-      
-      // If image input exists, we place it as the first part to help model ground its generation
       if (params.imageInput) {
         const smallImg = await this.shrinkImage(params.imageInput);
-        parts.push({ 
-          inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } 
-        });
-        parts.push({ text: "Use the structure and layout of the attached image as a TEMPLATE. Keep the shapes but apply the new style and text provided in the instructions." });
+        parts.push({ inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } });
+        parts.push({ text: "Replicate the exact composition and layout of this reference image, but apply the style and text specified in the prompt." });
       }
-      
       parts.push({ text: fullPrompt });
 
       const response = await ai.models.generateContent({
@@ -267,15 +243,14 @@ export class GeminiService {
         }
       }
       
-      if (!imageUrl) throw new Error("No image was generated. Please try a different style or prompt.");
+      if (!imageUrl) throw new Error("Image generation failed. Try a simpler prompt.");
       return { imageUrl, description: this.extractText(response) || "Generated Design" };
     } catch (e: any) {
-      console.error("Gemini Image Gen Error:", e);
-      // Fallback for 500/Rpc errors often means payload was too large or internal failure
+      console.error(e);
       if (e.message?.includes('xhr error') || e.message?.includes('500')) {
-        throw new Error("Design engine encountered a payload error. Try using a smaller reference image or a simpler prompt.");
+        throw new Error("Payload too large or internal model error. Try removing or simplifying the reference image.");
       }
-      throw new Error(e.message || "Image generation failed. This could be due to safety filters or service load.");
+      throw e;
     }
   }
 
@@ -288,7 +263,7 @@ export class GeminiService {
         contents: {
           parts: [
             { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
-            { text: "Background Removal Task: Detect the primary design element and isolate it perfectly on a PURE BRIGHT WHITE (#FFFFFF) background. Remove all noise, shadows, and secondary backgrounds." }
+            { text: "PROFESSIONAL BACKGROUND REMOVAL: Isolate the main logo element perfectly. Place it on a PURE, SOLID, BRIGHT WHITE (#FFFFFF) background. Remove all noise, overlapping backgrounds, shadows, and subtle gradients outside the main subject. Ensure crisp borders." }
           ]
         },
       });
@@ -302,7 +277,6 @@ export class GeminiService {
           }
         }
       }
-      if (!imageUrl) throw new Error("Background removal failed. Please ensure the subject is clear.");
       return imageUrl;
     } catch (e: any) {
       throw e;
@@ -318,7 +292,7 @@ export class GeminiService {
         contents: {
           parts: [
             { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
-            { text: `Transformation Task: Maintain the foundation of this design but apply these specific edits: ${editPrompt}. Respect the existing composition while changing elements.` }
+            { text: `ITERATIVE EDIT: Maintain the structure of this design but ${editPrompt}. Keep the background white and style consistent.` }
           ]
         },
       });
@@ -332,7 +306,6 @@ export class GeminiService {
           }
         }
       }
-      if (!imageUrl) throw new Error("Image iteration failed.");
       return imageUrl;
     } catch (e: any) {
       throw e;

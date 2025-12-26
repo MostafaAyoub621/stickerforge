@@ -48,6 +48,34 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, updateProject, s
     } finally { setLoading(false); }
   };
 
+  const makeTransparent = () => {
+    if (!project.currentAsset) return;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx?.drawImage(img, 0, 0);
+      const imageData = ctx?.getImageData(0, 0, canvas.width, canvas.height);
+      if (imageData) {
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          const r = imageData.data[i];
+          const g = imageData.data[i+1];
+          const b = imageData.data[i+2];
+          // If the pixel is close to white, make it transparent
+          if (r > 240 && g > 240 && b > 240) {
+            imageData.data[i+3] = 0;
+          }
+        }
+        ctx?.putImageData(imageData, 0, 0);
+        onGenerate({ ...project.currentAsset, url: canvas.toDataURL('image/png') });
+      }
+    };
+    img.src = project.currentAsset.url;
+  };
+
   const handleVectorize = async () => {
     if (!project.currentAsset) return;
     setLoading(true);
@@ -125,11 +153,9 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, updateProject, s
                 <button 
                   onClick={() => updateProject({ imageInput: undefined })}
                   className="absolute top-4 right-4 bg-red-500 p-1.5 rounded-full text-white shadow-xl hover:scale-110 active:scale-95 transition-all"
-                  title="Clear Reference"
                 >
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
-                <div className="mt-2 text-[8px] font-black text-center text-blue-400 uppercase tracking-[0.2em]">Active Layout Template</div>
               </div>
             )}
           </div>
@@ -140,39 +166,46 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, updateProject, s
             <div className="space-y-6">
               <div>
                 <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-3">Refinement Engine</label>
-                <div className="relative group">
-                  <textarea 
-                    value={editPrompt} 
-                    onChange={(e) => setEditPrompt(e.target.value)}
-                    placeholder="e.g. 'Make the lines thicker', 'Change theme to neon', 'Add a floral border'..."
-                    className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl p-4 text-xs h-32 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none placeholder:text-slate-700 transition-all font-medium leading-relaxed"
-                  />
-                </div>
+                <textarea 
+                  value={editPrompt} 
+                  onChange={(e) => setEditPrompt(e.target.value)}
+                  placeholder="e.g. 'Make lines thicker'..."
+                  className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl p-4 text-xs h-24 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none placeholder:text-slate-700 transition-all font-medium"
+                />
               </div>
 
-              <div className="grid grid-cols-1 gap-3">
+              <div className="flex flex-col gap-3">
                 <button 
                   onClick={handleEdit} 
                   disabled={!editPrompt}
                   className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[10px] font-black transition-all flex items-center justify-center gap-3 tracking-widest uppercase disabled:opacity-20 shadow-xl shadow-indigo-600/20"
                 >
-                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                    APPLY REFINEMENT
                 </button>
                 
                 <div className="grid grid-cols-1 gap-3">
-                  <button 
-                    onClick={handleRemoveBackground} 
-                    className="w-full py-4 bg-emerald-600/10 border border-emerald-500/20 text-emerald-300 rounded-2xl text-[10px] font-black hover:bg-emerald-600/20 transition-all flex items-center justify-center gap-3 uppercase shadow-lg"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    REMOVE BACKGROUND
-                  </button>
+                  <div className="p-3 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col gap-2">
+                    <span className="text-[8px] font-black text-slate-500 uppercase text-center mb-1">Background Tools</span>
+                    <button 
+                      onClick={handleRemoveBackground} 
+                      className="w-full py-3 bg-emerald-600/10 border border-emerald-500/20 text-emerald-300 rounded-xl text-[9px] font-black hover:bg-emerald-600/20 transition-all flex items-center justify-center gap-2 uppercase"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      1. AI CLEAR BACKGROUND
+                    </button>
+                    <button 
+                      onClick={makeTransparent} 
+                      className="w-full py-3 bg-blue-600/10 border border-blue-500/20 text-blue-300 rounded-xl text-[9px] font-black hover:bg-blue-600/20 transition-all flex items-center justify-center gap-2 uppercase"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v1m0 11v1m4-8h1m-11 0h1m2-2v10" /></svg>
+                      2. MAKE WHITE TRANSPARENT
+                    </button>
+                  </div>
+                  
                   <button 
                     onClick={handleVectorize} 
-                    className="w-full py-4 bg-blue-600/10 border border-blue-500/20 text-blue-300 rounded-2xl text-[10px] font-black hover:bg-blue-600/20 transition-all flex items-center justify-center gap-3 uppercase shadow-lg"
+                    className="w-full py-4 bg-slate-800 border border-slate-700 text-slate-300 rounded-2xl text-[10px] font-black hover:bg-slate-700 transition-all flex items-center justify-center gap-3 uppercase shadow-lg"
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01" /></svg>
                     EXTRACT VECTOR
                   </button>
                 </div>
@@ -200,31 +233,19 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, updateProject, s
                 {isMetaLoading ? 'OPTIMIZING...' : 'FORGE 50 TAGS'}
               </button>
             </div>
-            {project.currentAsset.metadata ? (
-              <div className="space-y-5">
-                <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
-                  <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest mb-2">Marketplace Title</p>
-                  <p className="text-xs text-white font-bold leading-relaxed">{project.currentAsset.metadata.title}</p>
+            {project.currentAsset.metadata && (
+              <div className="space-y-4">
+                <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl">
+                  <p className="text-[8px] text-slate-600 uppercase font-black mb-1">Title</p>
+                  <p className="text-[11px] text-white font-bold">{project.currentAsset.metadata.title}</p>
                 </div>
-                <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
-                  <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest mb-2">SEO Description</p>
-                  <p className="text-[10px] text-slate-400 font-medium leading-relaxed">{project.currentAsset.metadata.description}</p>
-                </div>
-                <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl relative group">
-                  <div className="flex justify-between items-center mb-3">
-                    <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest">SEO Keywords (50 Unique)</p>
-                    <button onClick={copyTags} className="text-[9px] text-emerald-400 opacity-0 group-hover:opacity-100 transition-all uppercase font-black tracking-tighter">Copy All</button>
+                <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl relative group">
+                  <div className="flex justify-between items-center mb-1">
+                    <p className="text-[8px] text-slate-600 uppercase font-black">50 Pro Tags</p>
+                    <button onClick={copyTags} className="text-[8px] text-emerald-400 opacity-0 group-hover:opacity-100 uppercase font-black transition-all">Copy</button>
                   </div>
-                  <div className="max-h-40 overflow-y-auto custom-scrollbar p-1">
-                    <p className="text-[9px] text-slate-400 font-mono leading-relaxed break-words">
-                      {project.currentAsset.metadata.tags.join(', ')}
-                    </p>
-                  </div>
+                  <p className="text-[9px] text-slate-400 font-mono line-clamp-2">{project.currentAsset.metadata.tags.join(', ')}</p>
                 </div>
-              </div>
-            ) : (
-              <div className="text-center py-10 bg-slate-900/30 rounded-3xl border border-slate-800/50 border-dashed">
-                <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest">Ready for POD Optimization</p>
               </div>
             )}
           </section>
