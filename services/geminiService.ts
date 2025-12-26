@@ -36,22 +36,133 @@ export class GeminiService {
     });
   }
 
-  private extractText(response: GenerateContentResponse): string {
+  /**
+   * Complex Query Handling with Thinking Mode
+   */
+  async deepThink(query: string, imageBase64?: string): Promise<string> {
+    const ai = this.getAI();
+    const parts: any[] = [{ text: query }];
+    if (imageBase64) {
+      const smallImg = await this.shrinkImage(imageBase64);
+      parts.push({ inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } });
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: { parts },
+      config: {
+        thinkingConfig: { thinkingBudget: 32768 }
+      }
+    });
+    // Use response.text directly as per guidelines
+    return response.text || "I've analyzed the request, but couldn't generate a response.";
+  }
+
+  /**
+   * Image Understanding using Gemini 3 Pro
+   */
+  async analyzeImage(base64: string): Promise<string> {
+    const ai = this.getAI();
+    const smallImg = await this.shrinkImage(base64);
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: {
+        parts: [
+          { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
+          { text: "Analyze this image in detail. Identify colors, shapes, typography styles, and core branding elements. Suggest how to adapt this into a professional sticker design." }
+        ]
+      }
+    });
+    // Use response.text directly as per guidelines
+    return response.text || "Analysis complete.";
+  }
+
+  /**
+   * Suggests brand identity components
+   */
+  async suggestIdentity(prompt: string, imageUrl?: string): Promise<{ brand: string; tagline: string }> {
+    const ai = this.getAI();
+    const parts: any[] = [{ text: `Based on the design concept "${prompt}", suggest a catchy brand name and a short tagline for a sticker business. Return as JSON.` }];
+    if (imageUrl) {
+      const smallImg = await this.shrinkImage(imageUrl);
+      parts.push({ inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } });
+    }
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: { parts },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            brand: { type: Type.STRING },
+            tagline: { type: Type.STRING }
+          },
+          required: ["brand", "tagline"]
+        }
+      }
+    });
+    // Parse response.text directly
+    return JSON.parse(response.text || '{"brand": "StickerForge", "tagline": "Crafting Identity"}');
+  }
+
+  /**
+   * Generates optimized marketplace metadata
+   */
+  async generateListingMetadata(params: { prompt: string; style: string; target: string; brand: string; platform?: string }): Promise<ListingMetadata> {
+    const ai = this.getAI();
+    const platformCtx = params.platform ? `for ${params.platform}` : "for a POD marketplace";
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Generate SEO-optimized listing metadata (title, description, and 13 tags) ${platformCtx} for a design with these details: 
+      Prompt: ${params.prompt}, Style: ${params.style}, Product: ${params.target}, Brand: ${params.brand}. Return as JSON.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            description: { type: Type.STRING },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING } }
+          },
+          required: ["title", "description", "tags"]
+        }
+      }
+    });
+    return JSON.parse(response.text || '{"title": "", "description": "", "tags": []}');
+  }
+
+  /**
+   * Suggests prompt variations based on a base concept
+   */
+  async suggestPrompts(prompt: string): Promise<string[]> {
+    const ai = this.getAI();
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Given the base concept "${prompt}", suggest 5 more detailed and creative variations of this prompt for sticker designs. Return as a JSON array of strings.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING }
+        }
+      }
+    });
     try {
-      const candidate = response.candidates?.[0];
-      if (!candidate || !candidate.content?.parts) return "";
-      return candidate.content.parts.map(p => p.text || "").join("").trim();
-    } catch (e) {
-      return "";
+      return JSON.parse(response.text || '[]');
+    } catch {
+      return [];
     }
   }
 
-  async fetchTrendingIdeas(): Promise<TrendingIdea[]> {
+  async fetchTrendingIdeas(platform?: string): Promise<TrendingIdea[]> {
     const ai = this.getAI();
+    const platformCtx = platform ? `specifically for the marketplace ${platform}` : "for general POD marketplaces like Etsy and Redbubble";
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: "Generate 5 trending, high-conversion design ideas for Print on Demand platforms. Include a catchy title, the niche name, a brief explanation of popularity, and a detailed descriptive prompt for a sticker logo. Return as JSON array.",
+        contents: `Generate 10 trending, high-conversion design niche ideas ${platformCtx}. Return as JSON array.`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -69,247 +180,98 @@ export class GeminiService {
           }
         }
       });
-      const text = this.extractText(response);
-      return text ? JSON.parse(text) : [];
-    } catch (e) {
-      console.error("Failed to fetch trends:", e);
-      return [];
-    }
-  }
-
-  async suggestIdentity(prompt: string, imageBase64?: string): Promise<{ brand: string; tagline: string }> {
-    const ai = this.getAI();
-    try {
-      let contents: any[] = [];
-      if (imageBase64) {
-        const smallImg = await this.shrinkImage(imageBase64);
-        contents.push({ inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } });
-      }
-      contents.push({ text: `Analyze this: "${prompt || 'modern logo'}". Suggest a professional brand name and tagline. Return JSON.` });
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: { parts: contents },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              brand: { type: Type.STRING },
-              tagline: { type: Type.STRING }
-            },
-            required: ["brand", "tagline"]
-          }
-        }
-      });
-      const text = this.extractText(response);
-      return text ? JSON.parse(text) : { brand: "StickerForge", tagline: "Design Reimagined" };
-    } catch (e) {
-      return { brand: "Design Forge", tagline: "Your Vision, Realized" };
-    }
-  }
-
-  async suggestPrompts(currentPrompt: string): Promise<string[]> {
-    const ai = this.getAI();
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Based on "${currentPrompt}", give 3 creative logo prompt variations. Return JSON array of strings.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING }
-          }
-        }
-      });
-      const text = this.extractText(response);
-      return text ? JSON.parse(text) : [];
+      return JSON.parse(response.text || "[]");
     } catch (e) {
       return [];
     }
   }
 
-  async generateListingMetadata(asset: { prompt: string; style: string; target: string; brand: string }): Promise<ListingMetadata> {
+  async suggestFont(prompt: string): Promise<string> {
     const ai = this.getAI();
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `SEO optimization for: Brand "${asset.brand}", Design "${asset.prompt}". Generate Title, Description, and 50 Tags. Return JSON.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              description: { type: Type.STRING },
-              tags: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ["title", "description", "tags"]
-          }
-        }
-      });
-      const text = this.extractText(response);
-      return text ? JSON.parse(text) : { title: asset.brand, description: asset.prompt, tags: [] };
-    } catch (e) {
-      return { title: asset.brand, description: asset.prompt, tags: [] };
-    }
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Based on the design concept "${prompt}", suggest one perfect font family name from Google Fonts. Return only the font name string.`,
+    });
+    return response.text?.trim() || "Inter";
   }
 
-  async vectorizeImage(base64Image: string): Promise<string[]> {
-    const ai = this.getAI();
-    try {
-      const smallImg = await this.shrinkImage(base64Image);
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: {
-          parts: [
-            { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
-            { text: "Extract SVG path 'd' strings for the main logo elements. Return JSON array." }
-          ]
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING }
-          }
-        }
-      });
-      const text = this.extractText(response);
-      return text ? JSON.parse(text) : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  async generateLogo(params: {
-    prompt: string;
-    style: DesignStyle;
-    target: ProductTarget;
-    brandName: string;
-    logoText?: string;
-    fontFamily?: string;
-    fontSize?: number;
-    textColor?: string;
-    mergeTextWithStyle: boolean;
-    textPosition: TextPosition;
-    imageInput?: string;
-    complexity: 'simple' | 'balanced' | 'detailed';
-    palette: string;
-    aspectRatio: "1:1" | "4:3" | "16:9";
-  }): Promise<{ imageUrl: string; description: string }> {
+  async generateLogo(params: any): Promise<{ imageUrl: string; description: string }> {
     const ai = this.getAI();
     const model = 'gemini-2.5-flash-image';
     
-    let textInstruction = "";
-    if (params.logoText) {
-      textInstruction = `CRITICAL: Incorporate exactly the text "${params.logoText}". 
-      FONT STYLE: ${params.fontFamily || "Inter"}. 
-      COLOR: ${params.textColor || "black"}. 
-      PLACEMENT: ${params.textPosition}. 
-      STRICT WARNING: DO NOT RENDER METADATA. DO NOT write technical strings like "Hex: ${params.textColor}", "Font: ${params.fontFamily}", or "Size: ${params.fontSize}" on the design. Only render the literal content "${params.logoText}".`;
+    let textInstruction = params.logoText ? `
+      TEXT: "${params.logoText}". TYPOGRAPHY: "${params.fontFamily}". COLOR: "${params.textColor}". POSITION: "${params.textPosition}".
+      ONLY render the text "${params.logoText}". NO hex codes or font names.` : "";
+
+    const fullPrompt = `A professional ${params.style} badge logo for ${params.target}. SUBJECT: ${params.prompt}. Flat clean vector, white background. ${textInstruction}`;
+
+    const parts: any[] = [];
+    if (params.imageInput) {
+      const smallImg = await this.shrinkImage(params.imageInput);
+      parts.push({ inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } });
+      parts.push({ text: "Use the structure of this reference but transform it into the style requested." });
     }
+    parts.push({ text: fullPrompt });
 
-    const fullPrompt = `A professional high-end ${params.style} sticker/logo design. 
-    Subject: ${params.prompt}. 
-    Optimized for: ${params.target}. 
-    STYLE: Flat vector art, solid fill colors, sharp edges, pure white background. NO gradients, NO 3D effects, NO photographic elements. 
-    ${textInstruction}`;
+    const response = await ai.models.generateContent({
+      model,
+      contents: { parts },
+      config: { imageConfig: { aspectRatio: params.aspectRatio } }
+    });
 
-    try {
-      const parts: any[] = [];
-      if (params.imageInput) {
-        const smallImg = await this.shrinkImage(params.imageInput);
-        parts.push({ inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } });
-        parts.push({ text: "Replicate the exact composition and layout of this reference image, but apply the style and text specified in the prompt." });
+    let imageUrl = "";
+    // Iterating parts to find image data as per guidelines
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        imageUrl = `data:image/png;base64,${part.inlineData.data}`;
+        break;
       }
-      parts.push({ text: fullPrompt });
-
-      const response = await ai.models.generateContent({
-        model,
-        contents: { parts },
-        config: { imageConfig: { aspectRatio: params.aspectRatio } }
-      });
-
-      let imageUrl = "";
-      const candidate = response.candidates?.[0];
-      if (candidate?.content?.parts) {
-        for (const part of candidate.content.parts) {
-          if (part.inlineData) {
-            imageUrl = `data:image/png;base64,${part.inlineData.data}`;
-            break;
-          }
-        }
-      }
-      
-      if (!imageUrl) throw new Error("Image generation failed. Try a simpler prompt.");
-      return { imageUrl, description: this.extractText(response) || "Generated Design" };
-    } catch (e: any) {
-      console.error(e);
-      if (e.message?.includes('xhr error') || e.message?.includes('500')) {
-        throw new Error("Payload too large or internal model error. Try removing or simplifying the reference image.");
-      }
-      throw e;
     }
+    return { imageUrl, description: response.text || "" };
   }
 
   async removeBackground(base64Image: string): Promise<string> {
     const ai = this.getAI();
-    try {
-      const smallImg = await this.shrinkImage(base64Image);
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [
-            { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
-            { text: "PROFESSIONAL BACKGROUND REMOVAL: Isolate the main logo element perfectly. Place it on a PURE, SOLID, BRIGHT WHITE (#FFFFFF) background. Remove all noise, overlapping backgrounds, shadows, and subtle gradients outside the main subject. Ensure crisp borders." }
-          ]
-        },
-      });
-      let imageUrl = "";
-      const candidate = response.candidates?.[0];
-      if (candidate?.content?.parts) {
-        for (const part of candidate.content.parts) {
-          if (part.inlineData) {
-            imageUrl = `data:image/png;base64,${part.inlineData.data}`;
-            break;
-          }
-        }
+    const smallImg = await this.shrinkImage(base64Image);
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
+          { text: "Remove the background. Isolate main design on pure white #FFFFFF." }
+        ]
+      },
+    });
+    let imageUrl = "";
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        imageUrl = `data:image/png;base64,${part.inlineData.data}`;
+        break;
       }
-      return imageUrl;
-    } catch (e: any) {
-      throw e;
     }
+    return imageUrl;
   }
 
   async editLogo(base64Image: string, editPrompt: string): Promise<string> {
     const ai = this.getAI();
-    try {
-      const smallImg = await this.shrinkImage(base64Image);
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [
-            { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
-            { text: `ITERATIVE EDIT: Maintain the structure of this design but ${editPrompt}. Keep the background white and style consistent.` }
-          ]
-        },
-      });
-      let imageUrl = "";
-      const candidate = response.candidates?.[0];
-      if (candidate?.content?.parts) {
-        for (const part of candidate.content.parts) {
-          if (part.inlineData) {
-            imageUrl = `data:image/png;base64,${part.inlineData.data}`;
-            break;
-          }
-        }
+    const smallImg = await this.shrinkImage(base64Image);
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          { inlineData: { data: smallImg.split(',')[1], mimeType: 'image/jpeg' } },
+          { text: `Edit this design: ${editPrompt}. Maintain high vector quality.` }
+        ]
+      },
+    });
+    let imageUrl = "";
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        imageUrl = `data:image/png;base64,${part.inlineData.data}`;
+        break;
       }
-      return imageUrl;
-    } catch (e: any) {
-      throw e;
     }
+    return imageUrl;
   }
 }
 

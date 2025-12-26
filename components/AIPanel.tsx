@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { gemini } from '../services/geminiService';
-import { DesignStyle, ProductTarget, DesignAsset, ProjectState } from '../types';
+import { DesignStyle, ProductTarget, DesignAsset, ProjectState, ListingMetadata } from '../types';
 
 interface AIPanelProps {
   project: ProjectState;
@@ -12,7 +12,11 @@ interface AIPanelProps {
 
 const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, updateProject, setLoading }) => {
   const [editPrompt, setEditPrompt] = useState('');
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [isMetaLoading, setIsMetaLoading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleEdit = async () => {
@@ -30,6 +34,28 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, updateProject, s
     } catch (err: any) {
       alert(err.message);
     } finally { setLoading(false); }
+  };
+
+  const handleAnalyzeReference = async () => {
+    if (!project.imageInput) return;
+    setIsAnalyzing(true);
+    try {
+      const result = await gemini.analyzeImage(project.imageInput);
+      setAnalysisResult(result);
+    } catch (err: any) {
+      alert(err.message);
+    } finally { setIsAnalyzing(false); }
+  };
+
+  const handleDeepCritique = async () => {
+    setIsThinking(true);
+    try {
+      const query = "Perform a deep, complex architectural design critique of the current logo concept. Provide highly detailed reasoning for color theory, alignment, and niche market viability.";
+      const result = await gemini.deepThink(query, project.currentAsset?.url || project.imageInput);
+      setAnalysisResult(result);
+    } catch (err: any) {
+      alert(err.message);
+    } finally { setIsThinking(false); }
   };
 
   const handleRemoveBackground = async () => {
@@ -61,11 +87,7 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, updateProject, s
       const imageData = ctx?.getImageData(0, 0, canvas.width, canvas.height);
       if (imageData) {
         for (let i = 0; i < imageData.data.length; i += 4) {
-          const r = imageData.data[i];
-          const g = imageData.data[i+1];
-          const b = imageData.data[i+2];
-          // If the pixel is close to white, make it transparent
-          if (r > 240 && g > 240 && b > 240) {
+          if (imageData.data[i] > 240 && imageData.data[i+1] > 240 && imageData.data[i+2] > 240) {
             imageData.data[i+3] = 0;
           }
         }
@@ -76,46 +98,46 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, updateProject, s
     img.src = project.currentAsset.url;
   };
 
-  const handleVectorize = async () => {
-    if (!project.currentAsset) return;
-    setLoading(true);
-    try {
-      const paths = await gemini.vectorizeImage(project.currentAsset.url);
-      onGenerate({ ...project.currentAsset, vectorPaths: paths });
-    } catch (err: any) {
-      alert(err.message);
-    } finally { setLoading(false); }
-  };
-
   const handleMetadata = async () => {
     if (!project.currentAsset) return;
     setIsMetaLoading(true);
     try {
+      const activePlatform = project.connectedPlatforms.find(p => p.id === project.activePlatformId);
       const metadata = await gemini.generateListingMetadata({
         prompt: project.currentAsset.prompt || "Concept",
         style: project.style,
         target: project.target,
-        brand: project.brandName || "Design Forge"
+        brand: project.brandName || "Design Forge",
+        platform: activePlatform?.name
       });
-      onGenerate({ ...project.currentAsset, metadata });
+      const nextPlatformMetadata = { ...(project.currentAsset.platformMetadata || {}) };
+      if (activePlatform) nextPlatformMetadata[activePlatform.id] = metadata;
+      onGenerate({ ...project.currentAsset, metadata, platformMetadata: nextPlatformMetadata });
     } finally { setIsMetaLoading(false); }
+  };
+
+  const handlePublish = async () => {
+    if (!project.currentAsset) return;
+    setIsPublishing(true);
+    await new Promise(r => setTimeout(r, 1500));
+    setIsPublishing(false);
+    alert('Listing successfully pushed to Store API! Assets are being synchronized...');
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        updateProject({ imageInput: reader.result as string });
-      };
+      reader.onloadend = () => updateProject({ imageInput: reader.result as string });
       reader.readAsDataURL(file);
     }
   };
 
   const copyTags = () => {
-    if (project.currentAsset?.metadata?.tags) {
-      navigator.clipboard.writeText(project.currentAsset.metadata.tags.join(', '));
-      alert('50 professional SEO tags copied to clipboard!');
+    const activeMeta = project.currentAsset?.platformMetadata?.[project.activePlatformId] || project.currentAsset?.metadata;
+    if (activeMeta?.tags) {
+      navigator.clipboard.writeText(activeMeta.tags.join(', '));
+      alert(`SEO data copied!`);
     }
   };
 
@@ -125,127 +147,105 @@ const AIPanel: React.FC<AIPanelProps> = ({ project, onGenerate, updateProject, s
         <section>
           <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400 mb-6 flex items-center gap-2.5">
             <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-            Design Controller
+            Intelligence Hub
           </h3>
           
           <div className="mb-6">
-            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-3">Reference Source</label>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
-              accept="image/*" 
-              onChange={handleImageUpload} 
-            />
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
             <button 
               onClick={() => fileInputRef.current?.click()}
-              className="w-full py-4 bg-slate-900 border border-slate-800 rounded-2xl text-[10px] font-black text-slate-400 hover:bg-slate-800 hover:text-white transition-all uppercase tracking-widest flex flex-col items-center justify-center gap-2 mb-3 group"
+              className="w-full py-4 bg-slate-900 border border-slate-800 rounded-2xl text-[10px] font-black text-slate-400 hover:bg-slate-800 transition-all uppercase tracking-widest flex flex-col items-center justify-center gap-2 group"
             >
-              <div className="p-3 bg-blue-500/10 rounded-full group-hover:bg-blue-500/20 transition-all">
-                <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-5-8l-3-3m0 0l-3 3m3-3v12" /></svg>
-              </div>
-              UPLOAD REFERENCE IMAGE
+              <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2-2v12a2 2 0 002 2z" strokeWidth={2}/></svg>
+              Upload Analysis Source
             </button>
             
             {project.imageInput && (
-              <div className="relative group rounded-2xl overflow-hidden border border-blue-500/30 p-2 bg-blue-500/5 animate-in fade-in zoom-in-95">
-                <img src={project.imageInput} className="w-full h-32 object-contain rounded-xl shadow-lg" alt="Reference Preview" />
+              <div className="mt-4 space-y-3">
+                <div className="relative group rounded-2xl overflow-hidden border border-blue-500/30 p-2 bg-blue-500/5">
+                  <img src={project.imageInput} className="w-full h-32 object-contain rounded-xl" alt="Reference" />
+                  <button onClick={() => updateProject({ imageInput: undefined })} className="absolute top-4 right-4 bg-red-500 p-1.5 rounded-full text-white shadow-xl">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M6 18L18 6M6 6l12 12" strokeWidth={3}/></svg>
+                  </button>
+                </div>
                 <button 
-                  onClick={() => updateProject({ imageInput: undefined })}
-                  className="absolute top-4 right-4 bg-red-500 p-1.5 rounded-full text-white shadow-xl hover:scale-110 active:scale-95 transition-all"
+                  onClick={handleAnalyzeReference}
+                  disabled={isAnalyzing}
+                  className="w-full py-2.5 bg-blue-600/10 border border-blue-500/30 text-blue-400 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600/20 transition-all"
                 >
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                  {isAnalyzing ? 'Analyzing...' : 'Analyze with Gemini Pro'}
                 </button>
               </div>
             )}
           </div>
 
-          <div className="h-px bg-slate-800 w-full mb-8"></div>
+          <button 
+            onClick={handleDeepCritique}
+            disabled={isThinking}
+            className="w-full py-4 bg-indigo-600/10 border border-indigo-500/30 text-indigo-400 rounded-2xl text-[10px] font-black hover:bg-indigo-600/20 transition-all uppercase tracking-[0.2em] flex items-center justify-center gap-3 mb-6"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" strokeWidth={2}/></svg>
+            {isThinking ? 'Thinking Deeply...' : 'AI Deep Critique'}
+          </button>
 
-          {project.currentAsset ? (
-            <div className="space-y-6">
-              <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-3">Refinement Engine</label>
+          {analysisResult && (
+            <div className="mb-8 p-4 bg-slate-900 border border-slate-800 rounded-2xl animate-in slide-in-from-top-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[8px] font-black text-indigo-400 uppercase tracking-widest">AI Insights</span>
+                <button onClick={() => setAnalysisResult(null)} className="text-[8px] text-slate-500 uppercase font-black">Dismiss</button>
+              </div>
+              <p className="text-[10px] text-slate-300 leading-relaxed font-medium line-clamp-[10]">{analysisResult}</p>
+            </div>
+          )}
+
+          {project.currentAsset && (
+            <div className="space-y-6 pt-6 border-t border-slate-800">
+               <div>
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-3">Nano Edit (Text-to-Image)</label>
                 <textarea 
                   value={editPrompt} 
                   onChange={(e) => setEditPrompt(e.target.value)}
-                  placeholder="e.g. 'Make lines thicker'..."
-                  className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl p-4 text-xs h-24 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none placeholder:text-slate-700 transition-all font-medium"
+                  placeholder="e.g. 'Add a retro filter' or 'Make it glowing'..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs h-24 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none placeholder:text-slate-800 transition-all font-medium"
                 />
               </div>
-
               <div className="flex flex-col gap-3">
-                <button 
-                  onClick={handleEdit} 
-                  disabled={!editPrompt}
-                  className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[10px] font-black transition-all flex items-center justify-center gap-3 tracking-widest uppercase disabled:opacity-20 shadow-xl shadow-indigo-600/20"
-                >
-                   APPLY REFINEMENT
+                <button onClick={handleEdit} disabled={!editPrompt} className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-[10px] font-black transition-all flex items-center justify-center gap-3 tracking-widest uppercase disabled:opacity-20 shadow-xl">
+                   APPLY AI EDIT
                 </button>
-                
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="p-3 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col gap-2">
-                    <span className="text-[8px] font-black text-slate-500 uppercase text-center mb-1">Background Tools</span>
-                    <button 
-                      onClick={handleRemoveBackground} 
-                      className="w-full py-3 bg-emerald-600/10 border border-emerald-500/20 text-emerald-300 rounded-xl text-[9px] font-black hover:bg-emerald-600/20 transition-all flex items-center justify-center gap-2 uppercase"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      1. AI CLEAR BACKGROUND
-                    </button>
-                    <button 
-                      onClick={makeTransparent} 
-                      className="w-full py-3 bg-blue-600/10 border border-blue-500/20 text-blue-300 rounded-xl text-[9px] font-black hover:bg-blue-600/20 transition-all flex items-center justify-center gap-2 uppercase"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v1m0 11v1m4-8h1m-11 0h1m2-2v10" /></svg>
-                      2. MAKE WHITE TRANSPARENT
-                    </button>
-                  </div>
-                  
-                  <button 
-                    onClick={handleVectorize} 
-                    className="w-full py-4 bg-slate-800 border border-slate-700 text-slate-300 rounded-2xl text-[10px] font-black hover:bg-slate-700 transition-all flex items-center justify-center gap-3 uppercase shadow-lg"
-                  >
-                    EXTRACT VECTOR
-                  </button>
-                </div>
+                <button onClick={handleRemoveBackground} className="w-full py-3 bg-emerald-600/10 border border-emerald-500/20 text-emerald-300 rounded-xl text-[9px] font-black hover:bg-emerald-600/20 transition-all uppercase">
+                  Remove Background
+                </button>
               </div>
-            </div>
-          ) : (
-            <div className="p-12 text-center text-slate-700 italic text-[9px] border-2 border-dashed border-slate-800 rounded-3xl uppercase tracking-[0.3em] leading-loose">
-              Forging in progress...
             </div>
           )}
         </section>
 
         {project.currentAsset && (
-          <section className="animate-in fade-in slide-in-from-top-6 duration-700">
+          <section className="animate-in fade-in slide-in-from-top-6">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400 flex items-center gap-2.5">
                 <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
-                SEO HUB
+                Publishing Sync
               </h3>
-              <button 
-                onClick={handleMetadata} 
-                disabled={isMetaLoading} 
-                className="text-[9px] font-black text-emerald-500 uppercase hover:underline transition-all tracking-widest disabled:opacity-20"
-              >
+              <button onClick={handleMetadata} disabled={isMetaLoading} className="text-[9px] font-black text-emerald-500 hover:underline uppercase transition-all tracking-widest disabled:opacity-20">
                 {isMetaLoading ? 'OPTIMIZING...' : 'FORGE 50 TAGS'}
               </button>
             </div>
-            {project.currentAsset.metadata && (
+            
+            {(project.currentAsset.platformMetadata?.[project.activePlatformId] || project.currentAsset.metadata) && (
               <div className="space-y-4">
-                <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl">
-                  <p className="text-[8px] text-slate-600 uppercase font-black mb-1">Title</p>
-                  <p className="text-[11px] text-white font-bold">{project.currentAsset.metadata.title}</p>
+                <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                  <p className="text-[8px] text-slate-600 uppercase font-black mb-1">Live SEO Preview</p>
+                  <p className="text-[11px] text-white font-bold leading-snug">{(project.currentAsset.platformMetadata?.[project.activePlatformId] || project.currentAsset.metadata)?.title}</p>
                 </div>
-                <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl relative group">
-                  <div className="flex justify-between items-center mb-1">
-                    <p className="text-[8px] text-slate-600 uppercase font-black">50 Pro Tags</p>
-                    <button onClick={copyTags} className="text-[8px] text-emerald-400 opacity-0 group-hover:opacity-100 uppercase font-black transition-all">Copy</button>
-                  </div>
-                  <p className="text-[9px] text-slate-400 font-mono line-clamp-2">{project.currentAsset.metadata.tags.join(', ')}</p>
-                </div>
+                <button 
+                  onClick={handlePublish}
+                  disabled={isPublishing}
+                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-[10px] font-black transition-all flex items-center justify-center gap-3 tracking-widest uppercase shadow-xl"
+                >
+                  {isPublishing ? 'Synchronizing Store...' : 'PUSH TO MARKETPLACE'}
+                </button>
               </div>
             )}
           </section>

@@ -44,34 +44,34 @@ export const PRODUCT_CATEGORIES = [
   {
     name: 'General',
     items: [
-      { id: ProductTarget.NONE, name: 'Design Only (No Mockup)' },
+      { id: ProductTarget.NONE, name: 'Design Only (No Mockup)', icon: '🖼️' },
     ]
   },
   {
     name: 'Clothing',
     items: [
-      { id: ProductTarget.TSHIRT, name: 'T-Shirts & Tops' },
-      { id: ProductTarget.OVERSIZED_TSHIRT, name: 'Oversized T-Shirts' },
-      { id: ProductTarget.DRESS, name: 'Dresses' },
-      { id: ProductTarget.KIDS_CLOTHES, name: 'Kids & Babies' },
-      { id: ProductTarget.SCARF, name: 'Scarves' },
-      { id: ProductTarget.SOCKS, name: 'Socks' },
+      { id: ProductTarget.TSHIRT, name: 'T-Shirts & Tops', icon: '👕' },
+      { id: ProductTarget.OVERSIZED_TSHIRT, name: 'Oversized T-Shirts', icon: '👚' },
+      { id: ProductTarget.DRESS, name: 'Dresses', icon: '👗' },
     ]
   },
   {
     name: 'Accessories',
     items: [
-      { id: ProductTarget.BUCKET_HAT, name: 'Bucket Hats' },
-      { id: ProductTarget.TOTE_BAG, name: 'Tote Bags' },
-      { id: ProductTarget.PHONE_CASE, name: 'Phone Cases' },
+      { id: ProductTarget.BUCKET_HAT, name: 'Bucket Hats', icon: '👒' },
+      { id: ProductTarget.TOTE_BAG, name: 'Tote Bags', icon: '👜' },
+      { id: ProductTarget.PHONE_CASE, name: 'Phone Cases', icon: '📱' },
     ]
   },
   {
-    name: 'Home & Stickers',
+    name: 'Office & Gear',
     items: [
-      { id: ProductTarget.MUG, name: 'Mugs' },
-      { id: ProductTarget.STICKER, name: 'All Stickers' },
-      { id: ProductTarget.WALL_ART, name: 'Wall Art' },
+      { id: 'laptop' as any, name: 'Laptop Lid', icon: '💻' },
+      { id: 'bottle' as any, name: 'Water Bottle', icon: '🍶' },
+      { id: 'notebook' as any, name: 'Notebook', icon: '📓' },
+      { id: ProductTarget.MUG, name: 'Ceramic Mugs', icon: '☕' },
+      { id: ProductTarget.STICKER, name: 'Die-Cut Stickers', icon: '✂️' },
+      { id: ProductTarget.WALL_ART, name: 'Framed Wall Art', icon: '🖼️' },
     ]
   }
 ];
@@ -82,13 +82,4 @@ export const STICKER_MATERIALS = [
   { id: StickerMaterial.CLEAR, name: 'Clear', description: 'Highly transparent, near invisible', icon: '🫥' },
   { id: StickerMaterial.HOLOGRAPHIC, name: 'Holographic', description: 'Dazzling rainbow effect', icon: '🌈' },
   { id: StickerMaterial.GLITTER, name: 'Glitter', description: 'Stunning sparkly effects', icon: '✨' },
-  { id: StickerMaterial.MIRROR_GOLD, name: 'Mirror Gold', description: 'Metallic gold vinyl', icon: '🟡' },
-  { id: StickerMaterial.MIRROR_SILVER, name: 'Mirror Silver', description: 'Metallic silver vinyl', icon: '⚪' },
-  { id: StickerMaterial.HEAVY_DUTY, name: 'Heavy Duty', description: '8x thicker, built for extreme use', icon: '🛡️' },
-  { id: StickerMaterial.BIODEGRADABLE, name: 'Eco-Friendly', description: 'Compostable, made from wood pulp', icon: '🌱' },
-  { id: StickerMaterial.FLUORESCENT, name: 'Fluorescent', description: 'Vibrant neon colors', icon: '🏮' },
-  { id: StickerMaterial.TRANSFER, name: 'Transfer', description: 'Single piece vinyl, bold designs', icon: '🎞️' },
-  { id: StickerMaterial.MAGNET, name: 'Magnet', description: 'Sticks to magnetic surfaces', icon: '🧲' },
-  { id: StickerMaterial.EGGSHELL, name: 'Eggshell', description: 'Anti-tamper, hard to remove', icon: '🥚' },
-  { id: StickerMaterial.KISS_CUT, name: 'Kiss Cut', description: 'Peel fast, printable border', icon: '💋' },
 ];

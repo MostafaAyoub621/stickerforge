@@ -82,6 +82,7 @@ export interface ListingMetadata {
   title: string;
   description: string;
   tags: string[];
+  platform?: string;
 }
 
 export interface TrendingIdea {
@@ -89,6 +90,13 @@ export interface TrendingIdea {
   niche: string;
   reason: string;
   suggestedPrompt: string;
+}
+
+export interface PODPlatform {
+  id: string;
+  name: string;
+  connected: boolean;
+  isCustom?: boolean;
 }
 
 export interface DesignAsset {
@@ -100,6 +108,7 @@ export interface DesignAsset {
   timestamp: number;
   vectorPaths?: string[]; 
   metadata?: ListingMetadata;
+  platformMetadata?: Record<string, ListingMetadata>;
 }
 
 export interface ProjectState {
@@ -116,7 +125,9 @@ export interface ProjectState {
   textColor: string;
   mergeTextWithStyle: boolean;
   textPosition: TextPosition;
-  imageInput?: string; 
+  imageInput?: string;
+  connectedPlatforms: PODPlatform[];
+  activePlatformId: string;
 }
 
 export type ExportFormat = 'SVG' | 'PNG' | 'JPG' | 'WEBP' | 'PDF' | 'PRINTFUL' | 'REDBUBBLE' | 'ETSY' | 'PRINTIFY';

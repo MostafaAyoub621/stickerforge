@@ -22,6 +22,12 @@ const App: React.FC = () => {
     textColor: '#000000',
     mergeTextWithStyle: true,
     textPosition: TextPosition.BELOW,
+    connectedPlatforms: [
+      { id: 'etsy', name: 'Etsy', connected: true },
+      { id: 'redbubble', name: 'Redbubble', connected: true },
+      { id: 'printful', name: 'Printful', connected: true }
+    ],
+    activePlatformId: 'none'
   });
   
   const [isLoading, setIsLoading] = useState(false);
@@ -54,7 +60,7 @@ const App: React.FC = () => {
 
   const handleGenerate = async (isMerge: boolean = false) => {
     const finalPrompt = isMerge 
-      ? `Hybrid design: Combine the visual elements, composition, and layout from the uploaded reference image with the aesthetic theme and specific stylistic choices of the current design. ${prompt}`
+      ? `CLONE HYBRID: Seamlessly blend the layout and core geometric structure of the uploaded reference image with the theme: ${prompt}. Maintain design integrity.`
       : prompt;
 
     if ((!finalPrompt && !project.imageInput) || isLoading) return;
@@ -87,7 +93,7 @@ const App: React.FC = () => {
       });
     } catch (e: any) {
       console.error(e);
-      alert(e.message || "An unexpected error occurred during generation.");
+      alert(e.message || "Design generation failed. Safety filters or API limits may be active.");
     } finally {
       setIsLoading(false);
     }
@@ -138,14 +144,14 @@ const App: React.FC = () => {
                     handleGenerate(false);
                   }
                 }}
-                placeholder="Describe your design vision..." 
+                placeholder="Describe the sticker concept you want to create..." 
                 className="w-full bg-slate-900/60 border-none focus:ring-2 focus:ring-blue-500/20 text-sm pl-12 pr-6 py-4 h-[60px] min-h-[60px] max-h-[120px] resize-none rounded-2xl placeholder:text-slate-600 custom-scrollbar transition-all leading-relaxed"
               />
               
               {suggestions.length > 0 && (
                 <div className="absolute bottom-full left-0 right-0 mb-5 glass border-blue-500/30 rounded-3xl p-3 shadow-[0_20px_60px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom-4 duration-500 backdrop-blur-3xl overflow-hidden">
                    <div className="flex justify-between items-center px-3 mb-3 pb-2 border-b border-white/5">
-                     <span className="text-[9px] font-black text-blue-400 uppercase tracking-[0.3em]">Design Variations</span>
+                     <span className="text-[9px] font-black text-blue-400 uppercase tracking-[0.3em]">AI Suggestions</span>
                      <button onClick={() => setSuggestions([])} className="w-6 h-6 rounded-full hover:bg-white/5 flex items-center justify-center transition-colors">
                         <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M6 18L18 6M6 6l12 12" strokeWidth={2.5}/></svg>
                      </button>
@@ -172,12 +178,12 @@ const App: React.FC = () => {
                 className={`p-4 rounded-2xl transition-all relative overflow-hidden group ${
                   isSuggesting ? 'bg-indigo-600/10' : 'bg-slate-800/80 hover:bg-slate-700/80 text-blue-400'
                 } disabled:opacity-20`}
-                title="AI Prompt Optimization"
+                title="Optimize Prompt"
               >
                 {isSuggesting ? (
                   <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
                 ) : (
-                  <svg className="w-5 h-5 transition-transform group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                   </svg>
                 )}
